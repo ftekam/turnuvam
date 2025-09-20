@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Futbol Turnuvası</title>
+<style>
+    /* Genel stil ve arka plan */
+    html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        background-color: black;
+    }
+    body {
+        font-family: Arial, sans-serif;
+        background: url('photo_001.png') no-repeat center bottom;
+        background-size: cover; 
+        background-position: top center; 
+        color: #fff;
+    }
+    h1 { text-align: center; margin-top: 20px; text-shadow: 2px 2px #000; }
+    input, button { padding: 8px; margin: 5px; font-size: 20px; border-radius: 5px; border: none; }
+    button { background-color: #1a73e8; color: #fff; cursor: pointer; }
+    button:hover { background-color: #155ab6; }
+    .team-entry, .team-list, .match-section, .standings, .champion-box { 
+        background-color: rgba(0,0,50,0.8); 
+        margin: 15px auto; 
+        padding: 20px; 
+        border-radius: 10px;
+        max-width: 650px; /* Bu satır kutucukları genişletti */
+    }
+    .team-list ul { list-style: none; padding-left: 0; }
+    .team-list li { padding: 5px; border-bottom: 1px solid #ccc; }
+
+    /* Kart görünümü için maçlar */
+    .match-card {
+        background-color: rgba(255,255,255,0.1);
+        padding: 10px;
+        margin-bottom: 10px;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .match-card input { width: 50px; text-align: center; }
+
+    /* Puan tablosu */
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; background-color: rgba(0,0,80,0.7); border-radius: 10px; overflow: hidden; }
+    th, td { border: 1px solid #fff; padding: 5px; text-align: center; font-size: 14px; }
+    th { background-color: rgba(0,0,100,0.8); }
+    
+    .tournament {
+        text-align: center;
+    }
+    
+    .champion-box h3 {
+        text-align: center;
+        margin: 0;
+    }
+
+    @media (max-width: 600px) {
+        th, td { font-size: 12px; padding: 4px; }
+        input, button { font-size: 14px; padding: 4px; }
+        .match-card { flex-direction: column; }
+    }
+</style>
+</head>
+<body>
+
+<h1>Futbol Turnuvası</h1>
+
+<div class="team-entry">
+    <input type="text" id="playerName" placeholder="Oyuncu Adı">
+    <input type="text" id="teamName" placeholder="Takım Adı">
+    <button id="addTeamBtn">Takımı Ekle</button>
+</div>
+
+<div class="team-list">
+    <h3>Takımlar:</h3>
+    <ul id="teamList"></ul>
+</div>
+
+<div class="tournament">
+    <button id="startTournamentBtn">Turnuvayı Başlat</button>
+
+    <div class="match-section" id="matchSection" style="display:none;">
+        <h3 id="weekTitle"></h3>
+        <div id="matchList"></div>
+    </div>
+
+    <div class="standings" id="standings">
+        <h3>Puan Tablosu:</h3>
+        <table id="pointsTable">
+            <thead>
+                <tr>
+                    <th>Sıra</th>
+                    <th>Takım</th>
+                    <th>Puan</th>
+                    <th>O</th>
+                    <th>G</th>
+                    <th>B</th>
+                    <th>M</th>
+                    <th>AG</th>
+                    <th>YG</th>
+                    <th>AV</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div class="champion-box" id="championBox" style="display:none;">
+        <h3>Şampiyon:</h3>
+        <p id="championInfo"></p>
+    </div>
+</div>
+
+<script>
+const teams = [];
+let weeksMatches = [];
+let currentWeek = 0;
+let knockoutStage = [];
+let knockoutType = '';
+let isFirstLeg = true; 
+
+class Team {
+    constructor(playerName, teamName) {
+        this.playerName = playerName;
+        this.teamName = teamName;
+        this.played = 0;
+        this.won = 0;
+        this.draw = 0;
+        this.lost = 0;
+        this.goalsFor = 0;
+        this.goalsAgainst = 0;
+        this.firstLegGoalsFor = 0;
+        this.firstLegGoalsAgainst = 0;
+    }
+    get points() { return this.won*3 + this.draw; }
+    get goalDifference() { return this.goalsFor - this.goalsAgainst; }
+}
+
+document.getElementById("addTeamBtn").onclick = () => {
+    const player = document.getElementById("playerName").value.trim();
+    const team = document.getElementById("teamName").value.trim();
+    if(player && team && teams.length < 8) {
+        teams.push(new Team(player, team));
+        updateTeamList();
+        document.getElementById("playerName").value = '';
+        document.getElementById("teamName").value = '';
+    } else alert("Tüm alanları doldurun veya max 8 takım ekleyin!");
+};
+
+function updateTeamList() {
+    const ul = document.getElementById("teamList");
+    ul.innerHTML = '';
+    teams.forEach(t => {
+        const li = document.createElement("li");
+        li.textContent = `${t.playerName} - ${t.teamName}`;
+        ul.appendChild(li);
+    });
+}
+
+document.getElementById("startTournamentBtn").onclick = () => {
+    if(teams.length !== 8) { alert("8 takım ekleyin!"); return; }
+    prepareWeeklyMatches();
+    document.getElementById("startTournamentBtn").style.display = "none";
+    showWeek(currentWeek);
+};
+
+// Hatasız round-robin
+function prepareWeeklyMatches() {
+    weeksMatches = [];
+    const n = teams.length;
+    let rotation = teams.slice();
+    for(let week=0; week<n-1; week++){
+        const matches = [];
+        for(let i=0;i<n/2;i++){
+            matches.push([rotation[i], rotation[n-1-i]]);
+        }
+        weeksMatches.push(matches);
+        rotation.splice(1,0,rotation.pop());
+    }
+}
+
+function showWeek(week) {
+    document.getElementById("matchSection").style.display = "block";
+    document.getElementById("weekTitle").textContent = `Hafta ${week+1}`;
+    const matchList = document.getElementById("matchList");
+    matchList.innerHTML = '';
+    weeksMatches[week].forEach((m,i)=>{
+        const div = document.createElement("div");
+        div.className = "match-card";
+        div.innerHTML = `
+            <span>${m[0].playerName} (${m[0].teamName}) vs ${m[1].playerName} (${m[1].teamName})</span>
+            <input type="number" placeholder="Gol" class="scoreA">
+            <input type="number" placeholder="Gol" class="scoreB">
+            <button onclick="submitMatch(${week},${i})">Kaydet</button>
+        `;
+        matchList.appendChild(div);
+    });
+}
+
+function submitMatch(week, matchIndex){
+    const matchDiv = document.getElementById("matchList").children[matchIndex];
+    const goalsA = parseInt(matchDiv.querySelector(".scoreA").value);
+    const goalsB = parseInt(matchDiv.querySelector(".scoreB").value);
+    if(isNaN(goalsA)||isNaN(goalsB)){ alert("Gol girin!"); return; }
+
+    const teamA = weeksMatches[week][matchIndex][0];
+    const teamB = weeksMatches[week][matchIndex][1];
+
+    teamA.goalsFor+=goalsA; teamA.goalsAgainst+=goalsB;
+    teamB.goalsFor+=goalsB; teamB.goalsAgainst+=goalsA;
+    teamA.played++; teamB.played++;
+
+    if(goalsA>goalsB){teamA.won++; teamB.lost++;}
+    else if(goalsB>goalsA){teamB.won++; teamA.lost++;}
+    else {teamA.draw++; teamB.draw++;}
+
+    matchDiv.style.display="none";
+    const weekDivs = Array.from(document.getElementById("matchList").children);
+    if(weekDivs.every(d=>d.style.display==="none")){
+        updateStandings();
+        if(currentWeek<weeksMatches.length-1){
+            currentWeek++;
+            showWeek(currentWeek);
+        } else startKnockouts();
+    }
+}
+
+function updateStandings(){
+    const tbody = document.querySelector("#pointsTable tbody");
+    tbody.innerHTML='';
+    const sorted = [...teams].sort((a,b)=>b.points-a.points||b.goalDifference-a.goalDifference||b.goalsFor-a.goalsFor);
+    sorted.forEach((t,i)=>{
+        const tr=document.createElement("tr");
+        tr.innerHTML=`
+            <td>${i+1}</td>
+            <td>${t.playerName} (${t.teamName})</td>
+            <td>${t.points}</td>
+            <td>${t.played}</td>
+            <td>${t.won}</td>
+            <td>${t.draw}</td>
+            <td>${t.lost}</td>
+            <td>${t.goalsFor}</td>
+            <td>${t.goalsAgainst}</td>
+            <td>${t.goalDifference}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function startKnockouts(){
+    const sortedTeams = [...teams].sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor);
+    
+    knockoutStage = [
+        [sortedTeams[0], sortedTeams[7]],
+        [sortedTeams[1], sortedTeams[6]],
+        [sortedTeams[2], sortedTeams[5]],
+        [sortedTeams[3], sortedTeams[4]]
+    ];
+    knockoutType = 'quarter';
+    isFirstLeg = true;
+    showKnockoutMatches();
+}
+
+function showKnockoutMatches() {
+    const matchList = document.getElementById("matchList");
+    matchList.innerHTML = '';
+    const roundName = knockoutType === 'quarter' ? 'Çeyrek Final' : (knockoutType === 'semi' ? 'Yarı Final' : 'Final');
+    const legText = (knockoutType !== 'final') ? `(${isFirstLeg ? '1. Maçlar' : '2. Maçlar'})` : '';
+    document.getElementById("weekTitle").textContent = `${roundName} Eşleşmeleri ${legText}`;
+
+    if (knockoutType === 'final') {
+        const match = knockoutStage[0];
+        const div = document.createElement("div");
+        div.className = "match-card";
+        div.innerHTML = `
+            <span>${match[0].playerName} (${match[0].teamName}) vs ${match[1].playerName} (${match[1].teamName})</span>
+            <input type="number" placeholder="Gol" class="scoreA" id="scoreA-0">
+            <input type="number" placeholder="Gol" class="scoreB" id="scoreB-0">
+        `;
+        matchList.appendChild(div);
+    } else {
+        knockoutStage.forEach((match, index) => {
+            const div = document.createElement("div");
+            div.className = "match-card";
+            div.innerHTML = `
+                <span>${match[0].playerName} (${match[0].teamName}) vs ${match[1].playerName} (${match[1].teamName})</span>
+                <input type="number" placeholder="Gol" class="scoreA" id="scoreA-${index}">
+                <input type="number" placeholder="Gol" class="scoreB" id="scoreB-${index}">
+            `;
+            matchList.appendChild(div);
+        });
+    }
+
+    const submitBtn = document.createElement("button");
+    submitBtn.textContent = "Kaydet";
+    submitBtn.onclick = () => {
+        submitAllKnockoutMatches();
+    };
+    matchList.appendChild(submitBtn);
+}
+
+function submitAllKnockoutMatches() {
+    let allScoresValid = true;
+    const currentMatches = [...knockoutStage];
+    let nextStageWinners = [];
+
+    currentMatches.forEach((match, index) => {
+        const goalsA = parseInt(document.getElementById(`scoreA-${index}`).value);
+        const goalsB = parseInt(document.getElementById(`scoreB-${index}`).value);
+
+        if (isNaN(goalsA) || isNaN(goalsB)) {
+            allScoresValid = false;
+        } else {
+            if (isFirstLeg) {
+                // 1. maç skorlarını takımlara kaydet
+                match[0].firstLegGoalsFor = goalsA;
+                match[0].firstLegGoalsAgainst = goalsB;
+                match[1].firstLegGoalsFor = goalsB;
+                match[1].firstLegGoalsAgainst = goalsA;
+            } else {
+                // 2. maç skorlarını takımlara ekle
+                match[0].goalsFor += goalsA;
+                match[0].goalsAgainst += goalsB;
+                match[1].goalsFor += goalsB;
+                match[1].goalsAgainst += goalsA;
+
+                // Turu kazananı belirle
+                const aggA = match[0].firstLegGoalsFor + goalsA;
+                const aggB = match[1].firstLegGoalsFor + goalsB;
+                
+                let winner = null;
+                if (aggA > aggB) {
+                    winner = match[0];
+                } else if (aggB > aggA) {
+                    winner = match[1];
+                } else { // Deplasman golü
+                    if (goalsA > match[1].firstLegGoalsFor) {
+                        winner = match[0];
+                    } else if (goalsB > match[0].firstLegGoalsFor) {
+                        winner = match[1];
+                    } else {
+                        alert("Berabere biten maç için penaltı atışlarına geçiniz. Şimdilik ilk takımı kazanan olarak belirliyoruz.");
+                        winner = match[0]; 
+                    }
+                }
+                nextStageWinners.push(winner);
+            }
+        }
+    });
+
+    if (!allScoresValid) {
+        alert("Lütfen tüm maçlar için golleri girin!");
+        return;
+    }
+
+    if (knockoutType === 'final') {
+        const goalsA = parseInt(document.getElementById("scoreA-0").value);
+        const goalsB = parseInt(document.getElementById("scoreB-0").value);
+        
+        let champion = (goalsA > goalsB) ? currentMatches[0][0] : currentMatches[0][1];
+        
+        document.getElementById("championInfo").textContent = `${champion.playerName} (${champion.teamName})`;
+        document.getElementById("championBox").style.display = "block";
+        document.getElementById("matchSection").style.display = "none";
+        return;
+    }
+
+    if (isFirstLeg) {
+        isFirstLeg = false;
+        showKnockoutMatches();
+    } else {
+        if (knockoutType === 'quarter') {
+            const winners = nextStageWinners;
+            knockoutType = 'semi';
+            knockoutStage = [
+                [winners[0], winners[1]],
+                [winners[2], winners[3]]
+            ];
+        } else if (knockoutType === 'semi') {
+            const winners = nextStageWinners;
+            knockoutType = 'final';
+            knockoutStage = [
+                [winners[0], winners[1]]
+            ];
+        }
+        isFirstLeg = true;
+        showKnockoutMatches();
+        updateStandings();
+    }
+}
+</script>
+
+</body>
+</html>
